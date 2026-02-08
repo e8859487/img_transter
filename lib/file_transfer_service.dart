@@ -53,6 +53,7 @@ class FileTransferService {
     required String sourcePath,
     required String targetPath,
     required bool deleteAfterTransfer,
+    Duration scanInterval = const Duration(seconds: 5),
   }) {
     stop();
     _previousSizes.clear();
@@ -60,7 +61,10 @@ class FileTransferService {
     // so re-starting monitoring won't re-process already transferred files.
     _log('開始監控: $sourcePath');
 
-    _timer = Timer.periodic(const Duration(seconds: 5), (_) {
+    // Run first scan immediately? No, original logic was periodic.
+    // However, for testing we might want immediate scan.
+    // Let's stick to periodic but with short interval.
+    _timer = Timer.periodic(scanInterval, (_) {
       _scan(
         sourcePath: sourcePath,
         targetPath: targetPath,
