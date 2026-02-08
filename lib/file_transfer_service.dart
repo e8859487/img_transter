@@ -5,10 +5,24 @@ import 'package:intl/intl.dart';
 
 class FileTransferService {
   static const _imageExtensions = {
-    '.jpg', '.jpeg', '.png', '.heic', '.heif', '.gif', '.bmp', '.tiff', '.webp'
+    '.jpg',
+    '.jpeg',
+    '.png',
+    '.heic',
+    '.heif',
+    '.gif',
+    '.bmp',
+    '.tiff',
+    '.webp',
   };
   static const _videoExtensions = {
-    '.mp4', '.mov', '.avi', '.mkv', '.wmv', '.flv', '.m4v'
+    '.mp4',
+    '.mov',
+    '.avi',
+    '.mkv',
+    '.wmv',
+    '.flv',
+    '.m4v',
   };
 
   Timer? _timer;
@@ -25,6 +39,10 @@ class FileTransferService {
   /// Callback when a file is successfully transferred.
   /// Parameters: sourcePath of the transferred file
   void Function(String sourcePath)? onFileTransferred;
+
+  /// Callback for transfer progress updates.
+  /// Parameters: fileName, progress (0.0 to 1.0)
+  void Function(String? fileName, double progress)? onTransferProgress;
 
   bool _isSupportedFile(String path) {
     final ext = p.extension(path).toLowerCase();
@@ -103,7 +121,9 @@ class FileTransferService {
           currentFiles[path] = size;
 
           // File is ready if size > 0 and matches previous scan
-          if (size > 0 && _previousSizes.containsKey(path) && _previousSizes[path] == size) {
+          if (size > 0 &&
+              _previousSizes.containsKey(path) &&
+              _previousSizes[path] == size) {
             readyFiles.add(entity);
           }
         } catch (e) {
@@ -140,6 +160,9 @@ class FileTransferService {
       final fileName = p.basename(file.path);
       final lastModified = await file.lastModified();
 
+      // Notify start of transfer
+      onTransferProgress?.call(fileName, 0.0);
+
       // Build target directory: targetPath/YYYY/MM
       final yearStr = DateFormat('yyyy').format(lastModified);
       final monthStr = DateFormat('MM').format(lastModified);
@@ -154,17 +177,30 @@ class FileTransferService {
       final destPath = p.join(destDir, fileName);
       final sourceSize = await file.length();
 
-      // Use stream copy for cross-volume support (e.g. external USB drives)
+      // Use chunked copy for progress tracking
       final destFile = File(destPath);
       try {
         final input = file.openRead();
         final output = destFile.openWrite();
-        await input.pipe(output);
+
+        int bytesTransferred = 0;
+
+        await for (final chunk in input) {
+          output.add(chunk);
+          bytesTransferred += chunk.length;
+
+          // Report progress
+          final progress = sourceSize > 0 ? bytesTransferred / sourceSize : 0.0;
+          onTransferProgress?.call(fileName, progress);
+        }
+
+        await output.close();
       } catch (e) {
         if (await destFile.exists()) {
           await destFile.delete();
         }
         _log('寫入失敗 $fileName: $e');
+        onTransferProgress?.call(null, 0.0); // Clear progress
         return;
       }
 
@@ -176,6 +212,7 @@ class FileTransferService {
         if (await destFile.exists()) {
           await destFile.delete();
         }
+        onTransferProgress?.call(null, 0.0); // Clear progress
         return;
       }
 
@@ -185,6 +222,9 @@ class FileTransferService {
       // Notify callback
       onFileTransferred?.call(file.path);
 
+      // Clear progress indicator
+      onTransferProgress?.call(null, 0.0);
+
       if (deleteAfterTransfer) {
         await file.delete();
         _log('已轉移並刪除: $fileName -> $yearStr/$monthStr/');
@@ -193,6 +233,7 @@ class FileTransferService {
       }
     } catch (e) {
       _log('轉移失敗 ${p.basename(file.path)}: $e');
+      onTransferProgress?.call(null, 0.0); // Clear progress
     }
   }
 

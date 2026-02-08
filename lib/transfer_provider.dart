@@ -16,23 +16,23 @@ final sharedPreferencesProvider = Provider<SharedPreferences>((ref) {
 // Source path - auto saves to disk
 final sourcePathProvider =
     StateNotifierProvider<_PersistentStringNotifier, String?>((ref) {
-  final prefs = ref.watch(sharedPreferencesProvider);
-  return _PersistentStringNotifier(prefs, _keySourcePath);
-});
+      final prefs = ref.watch(sharedPreferencesProvider);
+      return _PersistentStringNotifier(prefs, _keySourcePath);
+    });
 
 // Target path - auto saves to disk
 final targetPathProvider =
     StateNotifierProvider<_PersistentStringNotifier, String?>((ref) {
-  final prefs = ref.watch(sharedPreferencesProvider);
-  return _PersistentStringNotifier(prefs, _keyTargetPath);
-});
+      final prefs = ref.watch(sharedPreferencesProvider);
+      return _PersistentStringNotifier(prefs, _keyTargetPath);
+    });
 
 // Delete after transfer toggle - auto saves to disk
 final deleteAfterTransferProvider =
     StateNotifierProvider<_PersistentBoolNotifier, bool>((ref) {
-  final prefs = ref.watch(sharedPreferencesProvider);
-  return _PersistentBoolNotifier(prefs, _keyDeleteAfterTransfer);
-});
+      final prefs = ref.watch(sharedPreferencesProvider);
+      return _PersistentBoolNotifier(prefs, _keyDeleteAfterTransfer);
+    });
 
 final monitoringProvider = StateProvider<bool>((ref) => false);
 
@@ -62,7 +62,37 @@ class TransferredFilesNotifier extends StateNotifier<List<String>> {
 
 final transferredFilesProvider =
     StateNotifierProvider<TransferredFilesNotifier, List<String>>(
-        (ref) => TransferredFilesNotifier());
+      (ref) => TransferredFilesNotifier(),
+    );
+
+// --- Transfer progress tracking ---
+
+/// Data class for tracking current file transfer progress
+class TransferProgress {
+  final String? fileName;
+  final double progress; // 0.0 to 1.0
+
+  const TransferProgress({this.fileName, this.progress = 0.0});
+
+  bool get isTransferring => fileName != null && progress > 0.0;
+}
+
+class TransferProgressNotifier extends StateNotifier<TransferProgress> {
+  TransferProgressNotifier() : super(const TransferProgress());
+
+  void update(String? fileName, double progress) {
+    state = TransferProgress(fileName: fileName, progress: progress);
+  }
+
+  void clear() {
+    state = const TransferProgress();
+  }
+}
+
+final transferProgressProvider =
+    StateNotifierProvider<TransferProgressNotifier, TransferProgress>(
+      (ref) => TransferProgressNotifier(),
+    );
 
 // --- Persistent notifiers ---
 
@@ -71,7 +101,7 @@ class _PersistentStringNotifier extends StateNotifier<String?> {
   final String _key;
 
   _PersistentStringNotifier(this._prefs, this._key)
-      : super(_loadAndValidate(_prefs, _key));
+    : super(_loadAndValidate(_prefs, _key));
 
   /// Load saved value, but only if the directory still exists
   static String? _loadAndValidate(SharedPreferences prefs, String key) {
@@ -98,7 +128,7 @@ class _PersistentBoolNotifier extends StateNotifier<bool> {
   final String _key;
 
   _PersistentBoolNotifier(this._prefs, this._key)
-      : super(_prefs.getBool(_key) ?? false);
+    : super(_prefs.getBool(_key) ?? false);
 
   set value(bool newValue) {
     state = newValue;
@@ -123,8 +153,9 @@ class LogNotifier extends StateNotifier<List<String>> {
   }
 }
 
-final transferLogsProvider =
-    StateNotifierProvider<LogNotifier, List<String>>((ref) => LogNotifier());
+final transferLogsProvider = StateNotifierProvider<LogNotifier, List<String>>(
+  (ref) => LogNotifier(),
+);
 
 // --- File transfer service ---
 
@@ -138,6 +169,10 @@ final fileTransferServiceProvider = Provider<FileTransferService>((ref) {
   service.onFileTransferred = (sourcePath) {
     ref.read(transferCountProvider.notifier).state++;
     ref.read(transferredFilesProvider.notifier).add(sourcePath);
+  };
+
+  service.onTransferProgress = (fileName, progress) {
+    ref.read(transferProgressProvider.notifier).update(fileName, progress);
   };
 
   ref.onDispose(() {

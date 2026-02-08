@@ -18,8 +18,10 @@ class HomePage extends ConsumerWidget {
     final transferredFiles = ref.watch(transferredFilesProvider);
 
     // Check path existence for UI indicators
-    final sourceExists = sourcePath != null && Directory(sourcePath).existsSync();
-    final targetExists = targetPath != null && Directory(targetPath).existsSync();
+    final sourceExists =
+        sourcePath != null && Directory(sourcePath).existsSync();
+    final targetExists =
+        targetPath != null && Directory(targetPath).existsSync();
 
     return Scaffold(
       body: Padding(
@@ -66,15 +68,14 @@ class HomePage extends ConsumerWidget {
                   onChanged: isMonitoring
                       ? null
                       : (val) {
-                          ref.read(deleteAfterTransferProvider.notifier).value = val;
+                          ref.read(deleteAfterTransferProvider.notifier).value =
+                              val;
                         },
                 ),
                 const SizedBox(width: 8),
                 Text(
                   '轉移成功後刪除來源檔案',
-                  style: TextStyle(
-                    color: isMonitoring ? Colors.grey : null,
-                  ),
+                  style: TextStyle(color: isMonitoring ? Colors.grey : null),
                 ),
                 const Spacer(),
                 ElevatedButton.icon(
@@ -86,7 +87,10 @@ class HomePage extends ConsumerWidget {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: isMonitoring ? Colors.red : Colors.blue,
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 12,
+                    ),
                   ),
                 ),
               ],
@@ -109,20 +113,29 @@ class HomePage extends ConsumerWidget {
                     const SizedBox(width: 8),
                     Text(
                       '監控中... 每 5 秒掃描一次',
-                      style: TextStyle(color: Colors.green.shade700, fontSize: 13),
+                      style: TextStyle(
+                        color: Colors.green.shade700,
+                        fontSize: 13,
+                      ),
                     ),
                   ],
                   if (!isMonitoring && transferCount == 0)
                     Text(
                       '尚未開始',
-                      style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
+                      style: TextStyle(
+                        color: Colors.grey.shade500,
+                        fontSize: 13,
+                      ),
                     ),
                   const Spacer(),
 
                   // Transfer count badge
                   if (transferCount > 0)
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.blue.shade50,
                         borderRadius: BorderRadius.circular(12),
@@ -143,19 +156,89 @@ class HomePage extends ConsumerWidget {
                     const SizedBox(width: 12),
                     OutlinedButton.icon(
                       onPressed: () => _deleteTransferredSources(context, ref),
-                      icon: Icon(Icons.delete_sweep, size: 18, color: Colors.red.shade600),
+                      icon: Icon(
+                        Icons.delete_sweep,
+                        size: 18,
+                        color: Colors.red.shade600,
+                      ),
                       label: Text(
                         '刪除來源 (${transferredFiles.length})',
-                        style: TextStyle(color: Colors.red.shade600, fontSize: 13),
+                        style: TextStyle(
+                          color: Colors.red.shade600,
+                          fontSize: 13,
+                        ),
                       ),
                       style: OutlinedButton.styleFrom(
                         side: BorderSide(color: Colors.red.shade300),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
                       ),
                     ),
                   ],
                 ],
               ),
+            ),
+
+            // Transfer progress indicator
+            Consumer(
+              builder: (context, ref, child) {
+                final progress = ref.watch(transferProgressProvider);
+
+                if (!progress.isTransferring) {
+                  return const SizedBox.shrink();
+                }
+
+                return Padding(
+                  padding: const EdgeInsets.only(top: 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '正在轉移: ${progress.fileName}',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Text(
+                            '${(progress.progress * 100).toStringAsFixed(0)}%',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.blue.shade700,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: progress.progress,
+                          minHeight: 6,
+                          backgroundColor: Colors.grey.shade200,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Colors.blue.shade600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
             ),
 
             const SizedBox(height: 16),
@@ -252,9 +335,7 @@ class HomePage extends ConsumerWidget {
     if (isMonitoring) {
       service.stop();
       ref.read(monitoringProvider.notifier).state = false;
-      ref.read(transferLogsProvider.notifier).add(
-        '[${_timeNow()}] 已停止監控',
-      );
+      ref.read(transferLogsProvider.notifier).add('[${_timeNow()}] 已停止監控');
       return;
     }
 
@@ -285,7 +366,10 @@ class HomePage extends ConsumerWidget {
     ref.read(monitoringProvider.notifier).state = true;
   }
 
-  Future<void> _deleteTransferredSources(BuildContext context, WidgetRef ref) async {
+  Future<void> _deleteTransferredSources(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
     final transferredFiles = ref.read(transferredFilesProvider);
     if (transferredFiles.isEmpty) return;
 
@@ -382,12 +466,17 @@ class _FolderSelector extends StatelessWidget {
             ),
             Expanded(
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
                   color: isInvalid ? Colors.red.shade50 : Colors.grey.shade50,
                   borderRadius: BorderRadius.circular(6),
                   border: Border.all(
-                    color: isInvalid ? Colors.red.shade300 : Colors.grey.shade300,
+                    color: isInvalid
+                        ? Colors.red.shade300
+                        : Colors.grey.shade300,
                   ),
                 ),
                 child: Row(
@@ -395,12 +484,20 @@ class _FolderSelector extends StatelessWidget {
                     if (hasPath && pathExists)
                       Padding(
                         padding: const EdgeInsets.only(right: 6),
-                        child: Icon(Icons.check_circle, size: 16, color: Colors.green.shade600),
+                        child: Icon(
+                          Icons.check_circle,
+                          size: 16,
+                          color: Colors.green.shade600,
+                        ),
                       ),
                     if (isInvalid)
                       Padding(
                         padding: const EdgeInsets.only(right: 6),
-                        child: Icon(Icons.error, size: 16, color: Colors.red.shade600),
+                        child: Icon(
+                          Icons.error,
+                          size: 16,
+                          color: Colors.red.shade600,
+                        ),
                       ),
                     Expanded(
                       child: Text(
