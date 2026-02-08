@@ -8,7 +8,7 @@ class MainFlutterWindow: NSWindow {
     self.contentViewController = flutterViewController
     self.setFrame(windowFrame, display: true)
     self.center()
-    self.title = "檔案轉移工具"
+    self.title = "照片檔案搬移工具"
     self.minSize = NSSize(width: 600, height: 480)
 
     RegisterGeneratedPlugins(registry: flutterViewController)

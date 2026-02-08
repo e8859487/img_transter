@@ -1,6 +1,6 @@
-# iphone_img_transfer
+# 照片檔案搬移工具
 
-A new Flutter project.
+自動監控來源資料夾，將圖片與影片依年/月分類轉移至目標資料夾。
 
 ## Getting Started
 
