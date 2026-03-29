@@ -4,6 +4,9 @@ import 'package:path/path.dart' as p;
 import 'package:intl/intl.dart';
 
 class FileTransferService {
+  /// Maximum number of files to transfer per scan cycle.
+  static const int _batchSize = 30;
+
   static const _imageExtensions = {
     '.jpg',
     '.jpeg',
@@ -135,8 +138,12 @@ class FileTransferService {
         }
       }
 
-      // Transfer ready files
-      for (final file in readyFiles) {
+      // Transfer ready files in batches of _batchSize
+      final batch = readyFiles.take(_batchSize).toList();
+      if (batch.length < readyFiles.length) {
+        _log('發現 ${readyFiles.length} 個檔案，本批次處理 ${batch.length} 個');
+      }
+      for (final file in batch) {
         await _transferFile(
           file: file,
           targetPath: targetPath,
