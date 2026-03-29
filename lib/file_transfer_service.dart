@@ -7,6 +7,9 @@ class FileTransferService {
   /// Maximum number of files to transfer per scan cycle.
   static const int _batchSize = 30;
 
+  /// Number of concurrent transfer workers.
+  static const int _concurrency = 3;
+
   static const _imageExtensions = {
     '.jpg',
     '.jpeg',
@@ -31,6 +34,12 @@ class FileTransferService {
   Timer? _timer;
   final Map<String, int> _previousSizes = {};
   bool _isProcessing = false;
+
+  /// Task queue for worker pool
+  final List<_TransferTask> _taskQueue = [];
+  Completer<void>? _batchCompleter;
+  int _pendingTasks = 0;
+  bool _poolActive = false;
 
   /// Set of source file paths that have been successfully transferred this session.
   /// Used to avoid re-processing the same file.
@@ -60,25 +69,79 @@ class FileTransferService {
   }) {
     stop();
     _previousSizes.clear();
-    // Don't clear _transferredPaths here — we keep the session history
-    // so re-starting monitoring won't re-process already transferred files.
     _log('開始監控: $sourcePath');
 
-    // Run first scan immediately? No, original logic was periodic.
-    // However, for testing we might want immediate scan.
-    // Let's stick to periodic but with short interval.
+    // Start worker pool
+    _startWorkerPool(
+      targetPath: targetPath,
+      deleteAfterTransfer: deleteAfterTransfer,
+    );
+
     _timer = Timer.periodic(scanInterval, (_) {
-      _scan(
-        sourcePath: sourcePath,
+      _scan(sourcePath: sourcePath);
+    });
+  }
+
+  void _startWorkerPool({
+    required String targetPath,
+    required bool deleteAfterTransfer,
+  }) {
+    _stopWorkerPool();
+    _poolActive = true;
+
+    for (var i = 0; i < _concurrency; i++) {
+      _workerLoop(
+        workerId: i + 1,
         targetPath: targetPath,
         deleteAfterTransfer: deleteAfterTransfer,
       );
-    });
+    }
+
+    _log('已啟動 $_concurrency 個 worker');
+  }
+
+  /// Each worker pulls tasks from the shared queue.
+  /// When the queue is empty, the worker waits for _batchCompleter to be
+  /// replaced (next batch) via a polling micro-delay.
+  Future<void> _workerLoop({
+    required int workerId,
+    required String targetPath,
+    required bool deleteAfterTransfer,
+  }) async {
+    while (_poolActive) {
+      // Try to grab a task from the queue
+      final task = _taskQueue.isNotEmpty ? _taskQueue.removeAt(0) : null;
+      if (task == null) {
+        // No work available — yield and wait briefly
+        await Future.delayed(const Duration(milliseconds: 50));
+        continue;
+      }
+
+      await _transferFile(
+        file: task.file,
+        targetPath: targetPath,
+        deleteAfterTransfer: deleteAfterTransfer,
+        workerId: workerId,
+      );
+
+      _pendingTasks--;
+      if (_pendingTasks <= 0 && _batchCompleter != null && !_batchCompleter!.isCompleted) {
+        _batchCompleter!.complete();
+      }
+    }
+  }
+
+  void _stopWorkerPool() {
+    _poolActive = false;
+    _taskQueue.clear();
+    _batchCompleter = null;
+    _pendingTasks = 0;
   }
 
   void stop() {
     _timer?.cancel();
     _timer = null;
+    _stopWorkerPool();
     _previousSizes.clear();
   }
 
@@ -94,8 +157,6 @@ class FileTransferService {
 
   Future<void> _scan({
     required String sourcePath,
-    required String targetPath,
-    required bool deleteAfterTransfer,
   }) async {
     if (_isProcessing) return;
     _isProcessing = true;
@@ -115,11 +176,8 @@ class FileTransferService {
         if (entity is! File) continue;
         if (!_isSupportedFile(entity.path)) continue;
 
-        // Skip hidden/temp files (macOS sometimes creates ._ files)
         final fileName = p.basename(entity.path);
         if (fileName.startsWith('.')) continue;
-
-        // Skip already transferred files
         if (_transferredPaths.contains(entity.path)) continue;
 
         try {
@@ -127,7 +185,6 @@ class FileTransferService {
           final path = entity.path;
           currentFiles[path] = size;
 
-          // File is ready if size > 0 and matches previous scan
           if (size > 0 &&
               _previousSizes.containsKey(path) &&
               _previousSizes[path] == size) {
@@ -138,21 +195,26 @@ class FileTransferService {
         }
       }
 
-      // Transfer ready files in batches of _batchSize
+      // Dispatch batch to worker pool
       final batch = readyFiles.take(_batchSize).toList();
-      if (batch.length < readyFiles.length) {
-        _log('發現 ${readyFiles.length} 個檔案，本批次處理 ${batch.length} 個');
-      }
-      for (final file in batch) {
-        await _transferFile(
-          file: file,
-          targetPath: targetPath,
-          deleteAfterTransfer: deleteAfterTransfer,
-        );
-        currentFiles.remove(file.path);
+      if (batch.isNotEmpty) {
+        if (batch.length < readyFiles.length) {
+          _log('發現 ${readyFiles.length} 個檔案，本批次處理 ${batch.length} 個');
+        }
+        _log('派發 ${batch.length} 個檔案至 $_concurrency 個 worker');
+
+        _pendingTasks = batch.length;
+        _batchCompleter = Completer<void>();
+
+        for (final file in batch) {
+          _taskQueue.add(_TransferTask(file));
+          currentFiles.remove(file.path);
+        }
+
+        // Wait for all tasks in this batch to complete before next scan
+        await _batchCompleter!.future;
       }
 
-      // Update tracked sizes for next scan
       _previousSizes.clear();
       _previousSizes.addAll(currentFiles);
     } catch (e) {
@@ -166,18 +228,16 @@ class FileTransferService {
     required File file,
     required String targetPath,
     required bool deleteAfterTransfer,
+    required int workerId,
   }) async {
+    final fileName = p.basename(file.path);
     try {
-      final fileName = p.basename(file.path);
       final lastModified = await file.lastModified();
 
-      // Notify start of transfer
       onTransferProgress?.call(fileName, 0.0);
 
-      // Build target directory: targetPath/YYYY/MM
       final yearStr = DateFormat('yyyy').format(lastModified);
       final monthStr = DateFormat('MM').format(lastModified);
-
       final destDir = p.join(targetPath, yearStr, monthStr);
 
       final destDirectory = Directory(destDir);
@@ -185,11 +245,36 @@ class FileTransferService {
         await destDirectory.create(recursive: true);
       }
 
-      final destPath = p.join(destDir, fileName);
       final sourceSize = await file.length();
+      var destPath = p.join(destDir, fileName);
+      var destFile = File(destPath);
 
-      // Use chunked copy for progress tracking
-      final destFile = File(destPath);
+      // Check for existing file with same name
+      if (await destFile.exists()) {
+        final existingSize = await destFile.length();
+        if (existingSize == sourceSize) {
+          _transferredPaths.add(file.path);
+          onFileTransferred?.call(file.path);
+          onTransferProgress?.call(null, 0.0);
+          if (deleteAfterTransfer) {
+            await file.delete();
+            _log('[W$workerId] 跳過 (已有相同檔案) 並刪除來源: $fileName');
+          } else {
+            _log('[W$workerId] 跳過 (目的地已有相同檔案): $fileName');
+          }
+          return;
+        }
+        // Different size — rename with suffix
+        final baseName = p.basenameWithoutExtension(fileName);
+        final ext = p.extension(fileName);
+        var counter = 1;
+        do {
+          destPath = p.join(destDir, '${baseName}_$counter$ext');
+          destFile = File(destPath);
+          counter++;
+        } while (await destFile.exists());
+        _log('[W$workerId] 同名但大小不同，重新命名: $fileName -> ${p.basename(destPath)}');
+      }
       try {
         final input = file.openRead();
         final output = destFile.openWrite();
@@ -200,7 +285,6 @@ class FileTransferService {
           output.add(chunk);
           bytesTransferred += chunk.length;
 
-          // Report progress
           final progress = sourceSize > 0 ? bytesTransferred / sourceSize : 0.0;
           onTransferProgress?.call(fileName, progress);
         }
@@ -210,41 +294,35 @@ class FileTransferService {
         if (await destFile.exists()) {
           await destFile.delete();
         }
-        _log('寫入失敗 $fileName: $e');
-        onTransferProgress?.call(null, 0.0); // Clear progress
+        _log('[W$workerId] 寫入失敗 $fileName: $e');
+        onTransferProgress?.call(null, 0.0);
         return;
       }
 
-      // Verify copied file size matches
       final destSize = await destFile.length();
 
       if (destSize != sourceSize) {
-        _log('驗證失敗，大小不符: $fileName (來源: $sourceSize, 目標: $destSize)');
+        _log('[W$workerId] 驗證失敗，大小不符: $fileName (來源: $sourceSize, 目標: $destSize)');
         if (await destFile.exists()) {
           await destFile.delete();
         }
-        onTransferProgress?.call(null, 0.0); // Clear progress
+        onTransferProgress?.call(null, 0.0);
         return;
       }
 
-      // Mark as transferred — won't be processed again this session
       _transferredPaths.add(file.path);
-
-      // Notify callback
       onFileTransferred?.call(file.path);
-
-      // Clear progress indicator
       onTransferProgress?.call(null, 0.0);
 
       if (deleteAfterTransfer) {
         await file.delete();
-        _log('已轉移並刪除: $fileName -> $yearStr/$monthStr/');
+        _log('[W$workerId] 已轉移並刪除: $fileName -> $yearStr/$monthStr/');
       } else {
-        _log('已轉移: $fileName -> $yearStr/$monthStr/');
+        _log('[W$workerId] 已轉移: $fileName -> $yearStr/$monthStr/');
       }
     } catch (e) {
-      _log('轉移失敗 ${p.basename(file.path)}: $e');
-      onTransferProgress?.call(null, 0.0); // Clear progress
+      _log('[W$workerId] 轉移失敗 $fileName: $e');
+      onTransferProgress?.call(null, 0.0);
     }
   }
 
@@ -277,4 +355,9 @@ class FileTransferService {
   void dispose() {
     stop();
   }
+}
+
+class _TransferTask {
+  final File file;
+  _TransferTask(this.file);
 }
