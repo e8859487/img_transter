@@ -181,64 +181,100 @@ class HomePage extends ConsumerWidget {
               ),
             ),
 
-            // Transfer progress indicator
-            Consumer(
-              builder: (context, ref, child) {
-                final progress = ref.watch(transferProgressProvider);
+            // Batch & file transfer progress — always visible
+            Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: Consumer(
+                builder: (context, ref, child) {
+                  final batch = ref.watch(batchProgressProvider);
+                  final fileProgress = ref.watch(transferProgressProvider);
+                  final totalTransferred = ref.watch(transferCountProvider);
 
-                if (!progress.isTransferring) {
-                  return const SizedBox.shrink();
-                }
+                  final hasFileInProgress = fileProgress.isTransferring;
+                  final batchLabel = batch.batchTotal > 0
+                      ? '批次進度: ${batch.batchDone}/${batch.batchTotal}'
+                          '${batch.totalFound > batch.batchTotal ? '  (待處理共 ${batch.totalFound} 個)' : ''}'
+                      : '等待檔案...';
 
-                return Padding(
-                  padding: const EdgeInsets.only(top: 16),
-                  child: Column(
+                  return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // Batch progress row
                       Row(
                         children: [
-                          const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              '正在轉移: ${progress.fileName}',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
                           Text(
-                            '${(progress.progress * 100).toStringAsFixed(0)}%',
+                            batchLabel,
                             style: TextStyle(
                               fontSize: 13,
-                              color: Colors.blue.shade700,
-                              fontWeight: FontWeight.w600,
+                              fontWeight: FontWeight.w500,
+                              color: batch.isActive
+                                  ? Colors.blue.shade700
+                                  : Colors.grey.shade600,
+                            ),
+                          ),
+                          const Spacer(),
+                          Text(
+                            '累計已轉移: $totalTransferred',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey.shade600,
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 6),
+                      // Batch progress bar
                       ClipRRect(
                         borderRadius: BorderRadius.circular(4),
                         child: LinearProgressIndicator(
-                          value: progress.progress,
+                          value: batch.batchProgress,
                           minHeight: 6,
                           backgroundColor: Colors.grey.shade200,
                           valueColor: AlwaysStoppedAnimation<Color>(
-                            Colors.blue.shade600,
+                            batch.isActive
+                                ? Colors.blue.shade600
+                                : Colors.grey.shade400,
                           ),
                         ),
                       ),
+                      const SizedBox(height: 8),
+                      // Current file name
+                      Row(
+                        children: [
+                          if (hasFileInProgress) ...[
+                            SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.blue.shade400,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                '${fileProgress.fileName}  ${(fileProgress.progress * 100).toStringAsFixed(0)}%',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade700,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ] else
+                            Text(
+                              '閒置中',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade500,
+                              ),
+                            ),
+                        ],
+                      ),
                     ],
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             ),
 
             const SizedBox(height: 16),

@@ -94,6 +94,42 @@ final transferProgressProvider =
       (ref) => TransferProgressNotifier(),
     );
 
+// --- Batch progress tracking ---
+
+class BatchProgress {
+  final int batchTotal;
+  final int batchDone;
+  final int totalFound;
+
+  const BatchProgress({
+    this.batchTotal = 0,
+    this.batchDone = 0,
+    this.totalFound = 0,
+  });
+
+  double get batchProgress =>
+      batchTotal > 0 ? batchDone / batchTotal : 0.0;
+
+  bool get isActive => batchTotal > 0 && batchDone < batchTotal;
+}
+
+class BatchProgressNotifier extends StateNotifier<BatchProgress> {
+  BatchProgressNotifier() : super(const BatchProgress());
+
+  void update(int batchTotal, int batchDone, int totalFound) {
+    state = BatchProgress(
+      batchTotal: batchTotal,
+      batchDone: batchDone,
+      totalFound: totalFound,
+    );
+  }
+}
+
+final batchProgressProvider =
+    StateNotifierProvider<BatchProgressNotifier, BatchProgress>(
+      (ref) => BatchProgressNotifier(),
+    );
+
 // --- Persistent notifiers ---
 
 class _PersistentStringNotifier extends StateNotifier<String?> {
@@ -173,6 +209,12 @@ final fileTransferServiceProvider = Provider<FileTransferService>((ref) {
 
   service.onTransferProgress = (fileName, progress) {
     ref.read(transferProgressProvider.notifier).update(fileName, progress);
+  };
+
+  service.onBatchProgress = (batchTotal, batchDone, totalFound) {
+    ref.read(batchProgressProvider.notifier).update(
+      batchTotal, batchDone, totalFound,
+    );
   };
 
   ref.onDispose(() {

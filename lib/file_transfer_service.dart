@@ -39,6 +39,9 @@ class FileTransferService {
   final List<_TransferTask> _taskQueue = [];
   Completer<void>? _batchCompleter;
   int _pendingTasks = 0;
+  int _batchTotal = 0;
+  int _batchDone = 0;
+  int _totalFound = 0;
   bool _poolActive = false;
 
   /// Set of source file paths that have been successfully transferred this session.
@@ -55,6 +58,10 @@ class FileTransferService {
   /// Callback for transfer progress updates.
   /// Parameters: fileName, progress (0.0 to 1.0)
   void Function(String? fileName, double progress)? onTransferProgress;
+
+  /// Callback for batch progress updates.
+  /// Parameters: batchTotal, batchDone, totalFound
+  void Function(int batchTotal, int batchDone, int totalFound)? onBatchProgress;
 
   bool _isSupportedFile(String path) {
     final ext = p.extension(path).toLowerCase();
@@ -125,6 +132,8 @@ class FileTransferService {
       );
 
       _pendingTasks--;
+      _batchDone++;
+      onBatchProgress?.call(_batchTotal, _batchDone, _totalFound);
       if (_pendingTasks <= 0 && _batchCompleter != null && !_batchCompleter!.isCompleted) {
         _batchCompleter!.complete();
       }
@@ -203,8 +212,12 @@ class FileTransferService {
         }
         _log('派發 ${batch.length} 個檔案至 $_concurrency 個 worker');
 
+        _totalFound = readyFiles.length;
+        _batchTotal = batch.length;
+        _batchDone = 0;
         _pendingTasks = batch.length;
         _batchCompleter = Completer<void>();
+        onBatchProgress?.call(_batchTotal, _batchDone, _totalFound);
 
         for (final file in batch) {
           _taskQueue.add(_TransferTask(file));
