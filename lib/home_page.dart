@@ -210,6 +210,7 @@ class HomePage extends ConsumerWidget {
               child: Consumer(
                 builder: (context, ref, child) {
                   final queueSize = ref.watch(queueSizeProvider);
+                  final remaining = ref.watch(remainingFilesProvider);
                   final fileProgress = ref.watch(transferProgressProvider);
                   final totalTransferred = ref.watch(transferCountProvider);
                   final isPaused = ref.watch(pausedProvider);
@@ -222,10 +223,20 @@ class HomePage extends ConsumerWidget {
                       Row(
                         children: [
                           Text(
-                            '佇列: $queueSize / 30',
+                            '待轉移: $remaining 個檔案',
                             style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w500,
+                              color: remaining > 0
+                                  ? Colors.orange.shade700
+                                  : Colors.grey.shade600,
+                            ),
+                          ),
+                          const Spacer(),
+                          Text(
+                            '佇列: $queueSize / 30',
+                            style: TextStyle(
+                              fontSize: 13,
                               color: queueSize > 0
                                   ? Colors.blue.shade700
                                   : Colors.grey.shade600,
@@ -252,9 +263,9 @@ class HomePage extends ConsumerWidget {
                               ),
                             ),
                           ],
-                          const Spacer(),
+                          const SizedBox(width: 12),
                           Text(
-                            '累計已轉移: $totalTransferred',
+                            '已轉移: $totalTransferred',
                             style: TextStyle(
                               fontSize: 13,
                               color: Colors.grey.shade600,
@@ -424,6 +435,7 @@ class HomePage extends ConsumerWidget {
       ref.read(monitoringProvider.notifier).state = false;
       ref.read(pausedProvider.notifier).state = false;
       ref.read(queueSizeProvider.notifier).state = 0;
+      ref.read(remainingFilesProvider.notifier).state = 0;
       ref.read(transferLogsProvider.notifier).add('[${_timeNow()}] 已停止監控');
       return;
     }

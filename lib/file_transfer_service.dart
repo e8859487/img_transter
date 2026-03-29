@@ -35,7 +35,8 @@ class FileTransferService {
   void Function(String message)? onLog;
   void Function(String sourcePath)? onFileTransferred;
   void Function(String? fileName, double progress)? onTransferProgress;
-  void Function(int queueSize)? onQueueStatus;
+  /// Parameters: queueSize, remainingFiles (in source, not yet transferred)
+  void Function(int queueSize, int remainingFiles)? onQueueStatus;
 
   bool _isSupportedFile(String path) {
     final ext = p.extension(path).toLowerCase();
@@ -104,14 +105,20 @@ class FileTransferService {
       }
 
       final task = _taskQueue.removeAt(0);
-      onQueueStatus?.call(_taskQueue.length);
+      onQueueStatus?.call(_taskQueue.length, -1);
 
-      await _transferFile(
-        file: task.file,
-        targetPath: targetPath,
-        deleteAfterTransfer: deleteAfterTransfer,
-        workerId: workerId,
-      );
+      try {
+        await _transferFile(
+          file: task.file,
+          targetPath: targetPath,
+          deleteAfterTransfer: deleteAfterTransfer,
+          workerId: workerId,
+        ).timeout(const Duration(minutes: 5));
+      } on TimeoutException {
+        _log('[W$workerId] 逾時 (5分鐘)，跳過: ${p.basename(task.file.path)}');
+        _queuedPaths.remove(task.file.path);
+        onTransferProgress?.call(null, 0.0);
+      }
     }
   }
 
@@ -145,6 +152,7 @@ class FileTransferService {
     if (!await sourceDir.exists()) return;
 
     final currentFiles = <String, int>{};
+    int remainingCount = 0;
 
     try {
       await for (final entity in sourceDir.list()) {
@@ -154,6 +162,9 @@ class FileTransferService {
         final fileName = p.basename(entity.path);
         if (fileName.startsWith('.')) continue;
         if (_transferredPaths.contains(entity.path)) continue;
+
+        remainingCount++;
+
         if (_queuedPaths.contains(entity.path)) continue;
 
         try {
@@ -163,13 +174,11 @@ class FileTransferService {
           if (size > 0 &&
               _previousSizes.containsKey(entity.path) &&
               _previousSizes[entity.path] == size) {
-            // File is ready — enqueue if queue not full
             if (_taskQueue.length < _maxQueueSize) {
               _taskQueue.add(_TransferTask(entity));
               _queuedPaths.add(entity.path);
-              onQueueStatus?.call(_taskQueue.length);
             } else {
-              break; // Queue full, stop adding
+              break;
             }
           }
         } catch (_) {}
@@ -177,6 +186,8 @@ class FileTransferService {
     } catch (e) {
       _log('掃描錯誤: $e');
     }
+
+    onQueueStatus?.call(_taskQueue.length, remainingCount);
 
     _previousSizes.clear();
     _previousSizes.addAll(currentFiles);

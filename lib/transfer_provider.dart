@@ -97,6 +97,7 @@ final transferProgressProvider =
 // --- Queue status tracking ---
 
 final queueSizeProvider = StateProvider<int>((ref) => 0);
+final remainingFilesProvider = StateProvider<int>((ref) => 0);
 
 // --- Pause state ---
 
@@ -183,8 +184,11 @@ final fileTransferServiceProvider = Provider<FileTransferService>((ref) {
     ref.read(transferProgressProvider.notifier).update(fileName, progress);
   };
 
-  service.onQueueStatus = (queueSize) {
+  service.onQueueStatus = (queueSize, remainingFiles) {
     ref.read(queueSizeProvider.notifier).state = queueSize;
+    if (remainingFiles >= 0) {
+      ref.read(remainingFilesProvider.notifier).state = remainingFiles;
+    }
   };
 
   ref.onDispose(() {
