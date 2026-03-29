@@ -94,41 +94,13 @@ final transferProgressProvider =
       (ref) => TransferProgressNotifier(),
     );
 
-// --- Batch progress tracking ---
+// --- Queue status tracking ---
 
-class BatchProgress {
-  final int batchTotal;
-  final int batchDone;
-  final int totalFound;
+final queueSizeProvider = StateProvider<int>((ref) => 0);
 
-  const BatchProgress({
-    this.batchTotal = 0,
-    this.batchDone = 0,
-    this.totalFound = 0,
-  });
+// --- Pause state ---
 
-  double get batchProgress =>
-      batchTotal > 0 ? batchDone / batchTotal : 0.0;
-
-  bool get isActive => batchTotal > 0 && batchDone < batchTotal;
-}
-
-class BatchProgressNotifier extends StateNotifier<BatchProgress> {
-  BatchProgressNotifier() : super(const BatchProgress());
-
-  void update(int batchTotal, int batchDone, int totalFound) {
-    state = BatchProgress(
-      batchTotal: batchTotal,
-      batchDone: batchDone,
-      totalFound: totalFound,
-    );
-  }
-}
-
-final batchProgressProvider =
-    StateNotifierProvider<BatchProgressNotifier, BatchProgress>(
-      (ref) => BatchProgressNotifier(),
-    );
+final pausedProvider = StateProvider<bool>((ref) => false);
 
 // --- Persistent notifiers ---
 
@@ -211,10 +183,8 @@ final fileTransferServiceProvider = Provider<FileTransferService>((ref) {
     ref.read(transferProgressProvider.notifier).update(fileName, progress);
   };
 
-  service.onBatchProgress = (batchTotal, batchDone, totalFound) {
-    ref.read(batchProgressProvider.notifier).update(
-      batchTotal, batchDone, totalFound,
-    );
+  service.onQueueStatus = (queueSize) {
+    ref.read(queueSizeProvider.notifier).state = queueSize;
   };
 
   ref.onDispose(() {

@@ -78,6 +78,29 @@ class HomePage extends ConsumerWidget {
                   style: TextStyle(color: isMonitoring ? Colors.grey : null),
                 ),
                 const Spacer(),
+                if (isMonitoring) ...[
+                  Consumer(
+                    builder: (context, ref, child) {
+                      final isPaused = ref.watch(pausedProvider);
+                      return ElevatedButton.icon(
+                        onPressed: () => _togglePause(ref),
+                        icon: Icon(isPaused ? Icons.play_arrow : Icons.pause),
+                        label: Text(isPaused ? '繼續' : '暫停'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: isPaused
+                              ? Colors.green
+                              : Colors.orange,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                ],
                 ElevatedButton.icon(
                   onPressed: (sourcePath != null && targetPath != null)
                       ? () => _toggleMonitoring(context, ref)
@@ -181,37 +204,54 @@ class HomePage extends ConsumerWidget {
               ),
             ),
 
-            // Batch & file transfer progress — always visible
+            // Queue status & file transfer progress — always visible
             Padding(
               padding: const EdgeInsets.only(top: 16),
               child: Consumer(
                 builder: (context, ref, child) {
-                  final batch = ref.watch(batchProgressProvider);
+                  final queueSize = ref.watch(queueSizeProvider);
                   final fileProgress = ref.watch(transferProgressProvider);
                   final totalTransferred = ref.watch(transferCountProvider);
+                  final isPaused = ref.watch(pausedProvider);
 
                   final hasFileInProgress = fileProgress.isTransferring;
-                  final batchLabel = batch.batchTotal > 0
-                      ? '批次進度: ${batch.batchDone}/${batch.batchTotal}'
-                          '${batch.totalFound > batch.batchTotal ? '  (待處理共 ${batch.totalFound} 個)' : ''}'
-                      : '等待檔案...';
 
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Batch progress row
                       Row(
                         children: [
                           Text(
-                            batchLabel,
+                            '佇列: $queueSize / 30',
                             style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w500,
-                              color: batch.isActive
+                              color: queueSize > 0
                                   ? Colors.blue.shade700
                                   : Colors.grey.shade600,
                             ),
                           ),
+                          if (isPaused) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.orange.shade100,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                '已暫停',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.orange.shade800,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
                           const Spacer(),
                           Text(
                             '累計已轉移: $totalTransferred',
@@ -223,22 +263,22 @@ class HomePage extends ConsumerWidget {
                         ],
                       ),
                       const SizedBox(height: 6),
-                      // Batch progress bar
                       ClipRRect(
                         borderRadius: BorderRadius.circular(4),
                         child: LinearProgressIndicator(
-                          value: batch.batchProgress,
+                          value: queueSize / 30,
                           minHeight: 6,
                           backgroundColor: Colors.grey.shade200,
                           valueColor: AlwaysStoppedAnimation<Color>(
-                            batch.isActive
-                                ? Colors.blue.shade600
-                                : Colors.grey.shade400,
+                            isPaused
+                                ? Colors.orange.shade400
+                                : queueSize > 0
+                                    ? Colors.blue.shade600
+                                    : Colors.grey.shade400,
                           ),
                         ),
                       ),
                       const SizedBox(height: 8),
-                      // Current file name
                       Row(
                         children: [
                           if (hasFileInProgress) ...[
@@ -263,7 +303,7 @@ class HomePage extends ConsumerWidget {
                             ),
                           ] else
                             Text(
-                              '閒置中',
+                              isPaused ? '暫停中...' : '閒置中',
                               style: TextStyle(
                                 fontSize: 12,
                                 color: Colors.grey.shade500,
@@ -364,6 +404,17 @@ class HomePage extends ConsumerWidget {
     }
   }
 
+  void _togglePause(WidgetRef ref) {
+    final service = ref.read(fileTransferServiceProvider);
+    if (service.isPaused) {
+      service.resume();
+      ref.read(pausedProvider.notifier).state = false;
+    } else {
+      service.pause();
+      ref.read(pausedProvider.notifier).state = true;
+    }
+  }
+
   void _toggleMonitoring(BuildContext context, WidgetRef ref) {
     final isMonitoring = ref.read(monitoringProvider);
     final service = ref.read(fileTransferServiceProvider);
@@ -371,6 +422,8 @@ class HomePage extends ConsumerWidget {
     if (isMonitoring) {
       service.stop();
       ref.read(monitoringProvider.notifier).state = false;
+      ref.read(pausedProvider.notifier).state = false;
+      ref.read(queueSizeProvider.notifier).state = 0;
       ref.read(transferLogsProvider.notifier).add('[${_timeNow()}] 已停止監控');
       return;
     }
